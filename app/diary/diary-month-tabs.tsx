@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { LayoutGrid } from "lucide-react";
 import { monthShortName } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
@@ -17,14 +16,7 @@ export function DiaryMonthTabs({ year, activeMonth, months }: Props) {
     months.length > 0 ? months : [activeMonth].filter((m) => m >= 1 && m <= 12);
 
   return (
-    <div className="flex items-stretch gap-0 border-b border-border bg-card">
-      <Link
-        href={`#album-grid`}
-        className="flex shrink-0 items-center justify-center px-3 text-muted-foreground transition-colors hover:text-foreground"
-        aria-label="Jump to photo grid"
-      >
-        <LayoutGrid className="size-5" strokeWidth={1.75} />
-      </Link>
+    <div className="flex items-stretch gap-0 overflow-hidden rounded-xl border border-border bg-card">
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto scrollbar-hide">
         <ul className="flex">
           {list.map((m) => {

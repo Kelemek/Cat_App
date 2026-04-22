@@ -110,7 +110,7 @@ function safeJsonParse<T>(raw: string | null): T | null {
   }
 }
 
-function isPlacedSticker(x: unknown): x is PlacedStickerV1 {
+export function isPlacedSticker(x: unknown): x is PlacedStickerV1 {
   if (!x || typeof x !== "object") {
     return false;
   }
@@ -140,7 +140,7 @@ function isPlacedSticker(x: unknown): x is PlacedStickerV1 {
   return true;
 }
 
-function isCollectionItem(x: unknown): x is CollectionItemV1 {
+export function isCollectionItem(x: unknown): x is CollectionItemV1 {
   if (!x || typeof x !== "object") {
     return false;
   }
@@ -171,7 +171,7 @@ function persistPlacedMap(map: Record<string, PlacedStickerV1[]>) {
   localStorage.setItem(PLACED_STICKERS_BY_PATH_KEY, JSON.stringify(map));
 }
 
-function coalescePlacedMapFromRaw(raw: string | null): Record<string, PlacedStickerV1[]> {
+export function coalescePlacedMapFromRaw(raw: string | null): Record<string, PlacedStickerV1[]> {
   if (!raw) {
     return {};
   }
@@ -295,6 +295,14 @@ export function savePlacedStickersForPath(
   }
 }
 
+export function parseCollectionItemsJson(raw: string | null): CollectionItemV1[] {
+  const parsed = safeJsonParse<unknown[]>(raw);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter(isCollectionItem).slice(0, MAX_COLLECTION_ITEMS);
+}
+
 export function getCollectionSnapshot(): CollectionItemV1[] {
   if (typeof window === "undefined") {
     return COLLECTION_SNAPSHOT_EMPTY;
@@ -308,12 +316,7 @@ export function getCollectionSnapshot(): CollectionItemV1[] {
   if (collectionSnapshotCache?.raw === raw) {
     return collectionSnapshotCache.list;
   }
-  const parsed = safeJsonParse<unknown[]>(raw);
-  if (!Array.isArray(parsed)) {
-    collectionSnapshotCache = { raw, list: COLLECTION_SNAPSHOT_EMPTY };
-    return COLLECTION_SNAPSHOT_EMPTY;
-  }
-  const list = parsed.filter(isCollectionItem).slice(0, MAX_COLLECTION_ITEMS);
+  const list = parseCollectionItemsJson(raw);
   const stable = list.length === 0 ? COLLECTION_SNAPSHOT_EMPTY : list;
   collectionSnapshotCache = { raw, list: stable };
   return stable;

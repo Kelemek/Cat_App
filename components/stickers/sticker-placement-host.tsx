@@ -5,13 +5,7 @@ import {
   MAX_STICKER_TEXT_CHARS,
   type TextStickerShapeId,
 } from "@/lib/stickers/text-sticker-shapes";
-import {
-  getStickerAnchorElement,
-  loadPlacedStickersForPath,
-  newStickerId,
-  savePlacedStickersForPath,
-  type PlacedStickerV1,
-} from "@/lib/stickers/user-storage";
+import { getStickerAnchorElement, newStickerId, type PlacedStickerV1 } from "@/lib/stickers/user-storage";
 
 export type PendingPlacement =
   | { kind: "builtin"; id: BuiltinStickerId; defaultWidth: number }
@@ -38,16 +32,15 @@ export function ignoreStickerDropTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest("[data-sticker-place-ignore]"));
 }
 
-/** Returns true if a sticker was saved. */
-export function commitStickerPlacementAtPoint(
-  pathKey: string,
+/** Build a placed sticker from a drop position; returns null if the drop target is ignored. */
+export function buildPlacedStickerAtPoint(
   placement: PendingPlacement,
   clientX: number,
   clientY: number,
-): boolean {
+): PlacedStickerV1 | null {
   const target = document.elementFromPoint(clientX, clientY);
   if (ignoreStickerDropTarget(target)) {
-    return false;
+    return null;
   }
 
   const anchor = getStickerAnchorElement();
@@ -67,8 +60,7 @@ export function commitStickerPlacementAtPoint(
             stickerShape: placement.shape,
           };
 
-  const shared: Pick<PlacedStickerV1, "widthPx" | "rotationDeg"> &
-    typeof content = {
+  const shared: Pick<PlacedStickerV1, "widthPx" | "rotationDeg"> & typeof content = {
     widthPx,
     rotationDeg,
     ...content,
@@ -100,9 +92,7 @@ export function commitStickerPlacementAtPoint(
     };
   }
 
-  const cur = loadPlacedStickersForPath(pathKey);
-  savePlacedStickersForPath(pathKey, [...cur, placed]);
-  return true;
+  return placed;
 }
 
 export function defaultWidthForBuiltin(): number {

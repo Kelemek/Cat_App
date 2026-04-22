@@ -1,4 +1,3 @@
-import { DiaryHero } from "@/app/diary/diary-hero";
 import { DiaryMonthGrid } from "@/app/diary/diary-month-grid";
 import { DiaryMonthTabs } from "@/app/diary/diary-month-tabs";
 import { DiaryDatePicker } from "@/app/diary/diary-date-picker";
@@ -17,7 +16,6 @@ import {
   getDiaryDay,
   getDiaryPhotosForDate,
   getDiaryPhotosForMonth,
-  getFirstMemorySnippetInMonth,
   getMonthsWithActivityInYear,
 } from "@/lib/data/diary";
 
@@ -32,14 +30,12 @@ export default async function DiaryPage({ searchParams }: PageProps) {
   const diaryDate = parseISODateOrToday(sp.date);
   const { year, month } = monthYearFromISODate(diaryDate);
 
-  const [dayRow, dayPhotos, monthPhotos, tabMonthsRaw, memorySnippet] =
-    await Promise.all([
-      getDiaryDay(diaryDate),
-      getDiaryPhotosForDate(diaryDate),
-      getDiaryPhotosForMonth(year, month),
-      getMonthsWithActivityInYear(year),
-      getFirstMemorySnippetInMonth(year, month),
-    ]);
+  const [dayRow, dayPhotos, monthPhotos, tabMonthsRaw] = await Promise.all([
+    getDiaryDay(diaryDate),
+    getDiaryPhotosForDate(diaryDate),
+    getDiaryPhotosForMonth(year, month),
+    getMonthsWithActivityInYear(year),
+  ]);
 
   let tabMonths = tabMonthsRaw;
   if (!tabMonths.includes(month)) {
@@ -49,30 +45,14 @@ export default async function DiaryPage({ searchParams }: PageProps) {
     tabMonths = [month];
   }
 
-  const heroPhoto = monthPhotos[0] ?? null;
-  const subtitle = memorySnippet;
-
   const memoryText = dayRow?.memory_text ?? "";
 
   return (
     <SiteShell variant="album">
       <div className="overflow-x-hidden">
-        <div className="mx-auto max-w-6xl px-4 pt-2">
-          <p className="text-center text-lg font-medium tracking-wide text-muted-foreground">
-            {year}
-          </p>
-        </div>
-
         <div className="mx-auto max-w-6xl px-0 sm:px-4">
           <DiaryMonthTabs year={year} activeMonth={month} months={tabMonths} />
         </div>
-
-        <DiaryHero
-          year={year}
-          month={month}
-          heroPhoto={heroPhoto}
-          subtitle={subtitle}
-        />
 
         <div className="mx-auto max-w-6xl space-y-8 px-2 pb-10 sm:px-4">
           <DiaryMonthGrid photos={monthPhotos} selectedDate={diaryDate} />

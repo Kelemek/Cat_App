@@ -9,29 +9,41 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
+import {
+  addPlacedStickerAction,
+  addStickerCollectionItemAction,
+  clearPlacedStickersForPathAction,
+  deletePlacedStickerAction,
+  getStickerDbCountsAction,
+  importLocalStickerSnapshotAction,
+  listPlacedStickersForPathAction,
+  listStickerCollectionAction,
+  removeStickerCollectionItemAction,
+  updatePlacedStickerAction,
+} from "@/app/actions/stickers";
 import { StickerDragGhost } from "@/components/stickers/sticker-drag-ghost";
 import { StickerPlacementBanner } from "@/components/stickers/sticker-placement-banner";
 import {
-  commitStickerPlacementAtPoint,
+  buildPlacedStickerAtPoint,
   stickerPendingLabel,
   type PendingPlacement,
 } from "@/components/stickers/sticker-placement-host";
 import { StickerStudioModal } from "@/components/stickers/sticker-studio-modal";
 import { UserPlacedStickersLayer } from "@/components/stickers/user-placed-stickers-layer";
+import { readLocalStickerSnapshotForDbImport, clearLocalStickerStorageAfterImport } from "@/lib/stickers/migrate-local-storage";
 import {
-  getPlacedStickersSnapshotForPath,
-  loadPlacedStickersForPath,
   normalizeStickerPathKey,
-  PLACED_STICKERS_BY_PATH_KEY,
-  savePlacedStickersForPath,
   STICKER_SCROLL_ROOT_ID,
-  subscribePlaced,
+  type CollectionItemV1,
   type PlacedStickerV1,
 } from "@/lib/stickers/user-storage";
 
 const DRAG_THRESHOLD_PX = 8;
+
+function isLoginPathKey(pathKey: string): boolean {
+  return pathKey === "/login";
+}
 
 type StickerContextValue = {
   studioOpen: boolean;
@@ -51,26 +63,99 @@ export function useStickerOverlay() {
 export function StickerProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const stickerPathKey = normalizeStickerPathKey(pathname);
+  const stickersDisabled = isLoginPathKey(stickerPathKey);
 
-  const placedStorageRaw = useSyncExternalStore(
-    subscribePlaced,
-    () => {
-      if (typeof window === "undefined") {
-        return "";
-      }
+  const [placedStickers, setPlacedStickers] = useState<PlacedStickerV1[]>([]);
+  const [collection, setCollection] = useState<CollectionItemV1[]>([]);
+  const importAttemptedRef = useRef(false);
+
+  const refreshPlacedOnly = useCallback(async () => {
+    if (stickersDisabled) {
+      return;
+    }
+    try {
+      const placed = await listPlacedStickersForPathAction(stickerPathKey);
+      setPlacedStickers(placed);
+    } catch {
+      setPlacedStickers([]);
+    }
+  }, [stickerPathKey, stickersDisabled]);
+
+  const refreshAll = useCallback(async () => {
+    if (stickersDisabled) {
+      setPlacedStickers([]);
+      setCollection([]);
+      return;
+    }
+    try {
+      const [placed, coll] = await Promise.all([
+        listPlacedStickersForPathAction(stickerPathKey),
+        listStickerCollectionAction(),
+      ]);
+      setPlacedStickers(placed);
+      setCollection(coll);
+    } catch {
+      setPlacedStickers([]);
+      setCollection([]);
+    }
+  }, [stickerPathKey, stickersDisabled]);
+
+  useEffect(() => {
+    if (stickersDisabled) {
+      setPlacedStickers([]);
+      setCollection([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
       try {
-        return localStorage.getItem(PLACED_STICKERS_BY_PATH_KEY) ?? "";
-      } catch {
-        return "";
-      }
-    },
-    () => "",
-  );
+        const [placed, coll] = await Promise.all([
+          listPlacedStickersForPathAction(stickerPathKey),
+          listStickerCollectionAction(),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setPlacedStickers(placed);
+        setCollection(coll);
 
-  const placedStickers = useMemo(
-    () => getPlacedStickersSnapshotForPath(stickerPathKey),
-    [placedStorageRaw, stickerPathKey],
-  );
+        if (!importAttemptedRef.current) {
+          importAttemptedRef.current = true;
+          try {
+            const counts = await getStickerDbCountsAction();
+            if (counts.placed === 0 && counts.collection === 0) {
+              const snap = readLocalStickerSnapshotForDbImport();
+              if (snap) {
+                await importLocalStickerSnapshotAction(snap);
+                clearLocalStickerStorageAfterImport();
+                const [p2, c2] = await Promise.all([
+                  listPlacedStickersForPathAction(stickerPathKey),
+                  listStickerCollectionAction(),
+                ]);
+                if (!cancelled) {
+                  setPlacedStickers(p2);
+                  setCollection(c2);
+                }
+              }
+            }
+          } catch {
+            /* migration is best-effort */
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setPlacedStickers([]);
+          setCollection([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stickerPathKey, stickersDisabled]);
 
   const [studioOpen, setStudioOpen] = useState(false);
   const [activeDrag, setActiveDrag] = useState<{
@@ -142,12 +227,21 @@ export function StickerProvider({ children }: { children: React.ReactNode }) {
         }
         teardown();
         if (tracking.active) {
-          commitStickerPlacementAtPoint(
-            stickerPathKey,
+          const built = buildPlacedStickerAtPoint(
             tracking.pending,
             ev.clientX,
             ev.clientY,
           );
+          if (built) {
+            void (async () => {
+              try {
+                await addPlacedStickerAction(built, stickerPathKey);
+                await refreshPlacedOnly();
+              } catch (err) {
+                console.error(err);
+              }
+            })();
+          }
         }
         setActiveDrag(null);
       };
@@ -158,7 +252,7 @@ export function StickerProvider({ children }: { children: React.ReactNode }) {
       window.addEventListener("pointercancel", end);
       window.addEventListener("keydown", key);
     },
-    [stickerPathKey],
+    [stickerPathKey, refreshPlacedOnly],
   );
 
   useEffect(() => {
@@ -169,12 +263,16 @@ export function StickerProvider({ children }: { children: React.ReactNode }) {
 
   const removePlaced = useCallback(
     (id: string) => {
-      savePlacedStickersForPath(
-        stickerPathKey,
-        loadPlacedStickersForPath(stickerPathKey).filter((s) => s.id !== id),
-      );
+      void (async () => {
+        try {
+          await deletePlacedStickerAction(id);
+          await refreshPlacedOnly();
+        } catch (err) {
+          console.error(err);
+        }
+      })();
     },
-    [stickerPathKey],
+    [refreshPlacedOnly],
   );
 
   const updatePlaced = useCallback(
@@ -193,20 +291,68 @@ export function StickerProvider({ children }: { children: React.ReactNode }) {
         >
       >,
     ) => {
-      savePlacedStickersForPath(
-        stickerPathKey,
-        loadPlacedStickersForPath(stickerPathKey).map((s) =>
-          s.id === id ? { ...s, ...patch } : s,
-        ),
-      );
+      void (async () => {
+        try {
+          await updatePlacedStickerAction(id, patch);
+          await refreshPlacedOnly();
+        } catch (err) {
+          console.error(err);
+        }
+      })();
     },
-    [stickerPathKey],
+    [refreshPlacedOnly],
   );
 
   const cancelDrag = useCallback(() => {
     detachWindowDragRef.current?.();
     setActiveDrag(null);
   }, []);
+
+  const clearPlacedForCurrentPath = useCallback(() => {
+    void (async () => {
+      try {
+        await clearPlacedStickersForPathAction(stickerPathKey);
+        await refreshPlacedOnly();
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+  }, [stickerPathKey, refreshPlacedOnly]);
+
+  const removeCollectionItem = useCallback(
+    (id: string) => {
+      void (async () => {
+        try {
+          await removeStickerCollectionItemAction(id);
+          await refreshAll();
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+    },
+    [refreshAll],
+  );
+
+  const addCollectionItem = useCallback(
+    (item: CollectionItemV1) => {
+      void (async () => {
+        try {
+          await addStickerCollectionItemAction(item);
+          await refreshAll();
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+    },
+    [refreshAll],
+  );
+
+  useEffect(() => {
+    if (stickersDisabled) {
+      setStudioOpen(false);
+      cancelDrag();
+    }
+  }, [stickersDisabled, cancelDrag]);
 
   const value = useMemo(
     () => ({
@@ -218,36 +364,45 @@ export function StickerProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <StickerContext.Provider value={value}>
-      <StickerPlacementBanner
-        active={activeDrag !== null}
-        label={stickerPendingLabel()}
-        onCancel={cancelDrag}
-      />
-      {activeDrag ? (
-        <StickerDragGhost
-          pending={activeDrag.pending}
-          x={activeDrag.x}
-          y={activeDrag.y}
-        />
+      {!stickersDisabled ? (
+        <>
+          <StickerPlacementBanner
+            active={activeDrag !== null}
+            label={stickerPendingLabel()}
+            onCancel={cancelDrag}
+          />
+          {activeDrag ? (
+            <StickerDragGhost
+              pending={activeDrag.pending}
+              x={activeDrag.x}
+              y={activeDrag.y}
+            />
+          ) : null}
+          <StickerStudioModal
+            open={studioOpen}
+            onOpenChange={setStudioOpen}
+            onStickerDragPointerDown={onStudioStickerPointerDown}
+            placedCount={placedStickers.length}
+            collection={collection}
+            onClearPlaced={clearPlacedForCurrentPath}
+            onRemoveCollectionItem={removeCollectionItem}
+            onAddCollectionItem={addCollectionItem}
+          />
+        </>
       ) : null}
-      <StickerStudioModal
-        open={studioOpen}
-        onOpenChange={setStudioOpen}
-        pagePathKey={stickerPathKey}
-        onStickerDragPointerDown={onStudioStickerPointerDown}
-        placedCount={placedStickers.length}
-      />
       <div
         id={STICKER_SCROLL_ROOT_ID}
         className="relative z-10 flex min-h-full flex-1 flex-col"
       >
         {children}
       </div>
-      <UserPlacedStickersLayer
-        stickers={placedStickers}
-        onRemove={removePlaced}
-        onUpdate={updatePlaced}
-      />
+      {!stickersDisabled ? (
+        <UserPlacedStickersLayer
+          stickers={placedStickers}
+          onRemove={removePlaced}
+          onUpdate={updatePlaced}
+        />
+      ) : null}
     </StickerContext.Provider>
   );
 }

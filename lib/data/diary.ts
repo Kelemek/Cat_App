@@ -118,37 +118,6 @@ export async function getMonthsWithActivityInYear(year: number): Promise<number[
   return Array.from(months).filter((m) => m >= 1 && m <= 12).sort((a, b) => b - a);
 }
 
-export async function getFirstMemorySnippetInMonth(
-  year: number,
-  month: number,
-  maxLen = 120,
-): Promise<string | null> {
-  const supabase = createAdminClient();
-  const start = `${year}-${String(month).padStart(2, "0")}-01`;
-  const ld = new Date(year, month, 0).getDate();
-  const end = `${year}-${String(month).padStart(2, "0")}-${String(ld).padStart(2, "0")}`;
-
-  const { data, error } = await supabase
-    .from("diary_day")
-    .select("memory_text")
-    .gte("diary_date", start)
-    .lte("diary_date", end)
-    .neq("memory_text", "")
-    .order("diary_date", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const t = data?.memory_text?.trim();
-  if (!t) {
-    return null;
-  }
-  return t.length > maxLen ? `${t.slice(0, maxLen)}…` : t;
-}
-
 export async function getRecentDiaryDates(limit = 40): Promise<string[]> {
   const supabase = createAdminClient();
 

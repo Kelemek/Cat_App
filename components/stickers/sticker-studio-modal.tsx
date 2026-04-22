@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { X } from "lucide-react";
 import { BUILTIN_STICKERS } from "@/components/stickers/builtin-registry";
 import { Button } from "@/components/ui/button";
@@ -17,15 +12,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  COLLECTION_SNAPSHOT_EMPTY,
-  getCollectionSnapshot,
-  loadCollection,
   MAX_COLLECTION_ITEMS,
   MAX_DATA_URL_LENGTH,
   newStickerId,
-  saveCollection,
-  savePlacedStickersForPath,
-  subscribeCollection,
   type CollectionItemV1,
 } from "@/lib/stickers/user-storage";
 import {
@@ -47,29 +36,30 @@ import { cn } from "@/lib/utils";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  pagePathKey: string;
   onStickerDragPointerDown: (
     pending: PendingPlacement,
     e: ReactPointerEvent,
   ) => void;
   placedCount: number;
+  collection: CollectionItemV1[];
+  onClearPlaced: () => void | Promise<void>;
+  onRemoveCollectionItem: (id: string) => void | Promise<void>;
+  onAddCollectionItem: (item: CollectionItemV1) => void | Promise<void>;
 };
 
 export function StickerStudioModal({
   open,
   onOpenChange,
-  pagePathKey,
   onStickerDragPointerDown,
   placedCount,
+  collection,
+  onClearPlaced,
+  onRemoveCollectionItem,
+  onAddCollectionItem,
 }: Props) {
   const [tab, setTab] = useState<"builtin" | "yours" | "text">("builtin");
   const [textDraft, setTextDraft] = useState("");
   const [textShape, setTextShape] = useState<TextStickerShapeId>("bubble");
-  const collection = useSyncExternalStore(
-    subscribeCollection,
-    getCollectionSnapshot,
-    () => COLLECTION_SNAPSHOT_EMPTY,
-  );
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -84,12 +74,11 @@ export function StickerStudioModal({
     if (!confirm("Remove all stickers you placed on this page?")) {
       return;
     }
-    savePlacedStickersForPath(pagePathKey, []);
+    void onClearPlaced();
   }
 
   function removeFromCollection(id: string) {
-    const next = loadCollection().filter((c) => c.id !== id);
-    saveCollection(next);
+    void onRemoveCollectionItem(id);
   }
 
   async function onFilesSelected(files: FileList | null) {
@@ -119,8 +108,7 @@ export function StickerStudioModal({
       return;
     }
 
-    const cur = loadCollection();
-    if (cur.length >= MAX_COLLECTION_ITEMS) {
+    if (collection.length >= MAX_COLLECTION_ITEMS) {
       setUploadError(`Collection full (max ${MAX_COLLECTION_ITEMS}). Remove one first.`);
       return;
     }
@@ -131,8 +119,7 @@ export function StickerStudioModal({
       name: file.name.replace(/\.[^/.]+$/, "") || "Sticker",
       createdAt: Date.now(),
     };
-    const next = [...cur, item];
-    saveCollection(next);
+    void onAddCollectionItem(item);
     if (fileRef.current) {
       fileRef.current.value = "";
     }
@@ -150,7 +137,7 @@ export function StickerStudioModal({
             Press and drag a sticker out of the studio, then release on the page
             to place it. After placing, drag to move, use the top handle to
             spin, or the top-left handle to resize. Stickers are saved per page
-            in this browser; your upload collection is shared across pages.
+            on the server; your upload collection is shared across pages.
           </DialogDescription>
         </DialogHeader>
 
