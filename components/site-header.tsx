@@ -57,7 +57,7 @@ export function SiteHeader({ variant = "default" }: SiteHeaderProps) {
                 href="/symptoms"
                 className="rounded-xl px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted hover:text-primary"
               >
-                Symptoms
+                Health
               </Link>
               <StickerToggleButton album />
               <form action={logoutAction} className="ml-1">
@@ -84,7 +84,7 @@ export function SiteHeader({ variant = "default" }: SiteHeaderProps) {
                 href="/symptoms"
                 className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
               >
-                Symptoms
+                Health
               </Link>
               <StickerToggleButton />
               <form action={logoutAction}>
